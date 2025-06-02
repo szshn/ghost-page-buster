@@ -11,17 +11,16 @@ type PageResult struct {
 }
 
 func main() {
-	ghostbust()
-}
-
-func ghostbust() {
 	var pageurl string
 	fmt.Println("Please type the URL of the page you would like to inspect and press Enter")
 	fmt.Scanln(&pageurl)
-	// pageurl := "https://pkg.go.dev/rsc.io/quote"  
 
+	visitReqs := make(chan visitRequest)
+	go visitCoordinator(visitReqs)
+	
 	start := time.Now()
-	inspectPage(pageurl)
-
+	inspectPage(pageurl, 2, visitReqs)
 	fmt.Printf("Time taken: %v\n", time.Since(start))
+
+	close(visitReqs)
 }
