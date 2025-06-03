@@ -12,14 +12,16 @@ type PageResult struct {
 
 func main() {
 	var pageurl string
-	fmt.Println("Please type the URL of the page you would like to inspect and press Enter")
-	fmt.Scanln(&pageurl)
+	var depth int
+	fmt.Println("Please type the URL of the page you would like to inspect and desired query depth. Press Enter to contninue.")
+	fmt.Println("(e.g. www.example.com 3)")
+	fmt.Scanf("%s %d\n", &pageurl, &depth)
 
 	visitReqs := make(chan visitRequest)
 	go visitCoordinator(visitReqs)
 	
 	start := time.Now()
-	inspectPage(pageurl, 2, visitReqs)
+	inspectPage(pageurl, depth, visitReqs)
 	fmt.Printf("Time taken: %v\n", time.Since(start))
 
 	close(visitReqs)
