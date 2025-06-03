@@ -89,7 +89,7 @@ func inspectSubpage(url string, inactive, unknown chan bool) {
 
 func findSubpages(orig string) PageResult {
 	pageurl := normalizeURL(orig)
-	client := &http.Client{Timeout: time.Second}
+	client := &http.Client{Timeout: time.Second * 10}
 
 	resp, err := client.Get(pageurl)
 	if err != nil {
@@ -117,22 +117,54 @@ func findSubpages(orig string) PageResult {
 
 		for _, a := range t.Attr {
 			if a.Key == "href" {
-				// Add to a list of subpages
-				if strings.HasPrefix(a.Val, "http") {
+				if  // Ignore mail, phone, and javascript protocols
+					strings.HasPrefix(a.Val, "mailto:") ||
+					strings.HasPrefix(a.Val, "sms:") ||
+					strings.HasPrefix(a.Val, "tel:") || 
+					strings.HasPrefix(a.Val, "javascript:") {
+					break
+				} else if strings.HasPrefix(a.Val, "http") {	// Absolute URL
 					result.subpages[normalizeURL(a.Val)] = struct{}{}
-				} else if strings.HasPrefix(a.Val, "?") {
-					result.subpages[normalizeURL(pageurl+a.Val)] = struct{}{}
-				} else if strings.HasPrefix(a.Val, "#") && a.Val != "#" {
-					// check that the corresponding element exists in the html body
-				} else if strings.HasPrefix(a.Val, "/") {
-					parsedURL, err := url.Parse(pageurl)
-					if err != nil {
-						fmt.Println("Error parsing url:", err)
-						return PageResult{}
-					}
-					fullURL := "https://" + parsedURL.Hostname() + a.Val
+				} else { // Relative URL					
+					if strings.HasPrefix(a.Val, "/") {	// Root directory relative
+						parsedURL, err := url.Parse(pageurl)
+						if err != nil {
+							fmt.Printf("Error parsing %s: %v\n", pageurl, err)
+							return PageResult{}
+						}
+						fullURL := "https://" + parsedURL.Hostname() + a.Val
 
-					result.subpages[normalizeURL(fullURL)] = struct{}{}
+						result.subpages[normalizeURL(fullURL)] = struct{}{}
+					} else if strings.HasPrefix(a.Val, "../") { // Parent relative
+						fullURL := strings.TrimSuffix(pageurl, "/")
+
+						path := a.Val
+						for strings.HasPrefix(path, "../") {
+							// scope out from current directory
+							for fullURL[len(fullURL)-1] != '/' {
+								fullURL = fullURL[:len(fullURL)-1]
+							}
+							fullURL = strings.TrimSuffix(fullURL, "/") // remove trailing slash
+							path = strings.TrimPrefix(path, "../")	// remove ../ in path
+						}
+						fullURL += path
+
+						result.subpages[normalizeURL(fullURL)] = struct{}{}
+
+					} else if strings.HasPrefix(a.Val, "#") { // && a.Val != "#" {
+						// check that the corresponding element exists in the html body?
+						break
+					} else { // Current directory relative
+						fullURL := strings.TrimSuffix(pageurl, "/")							
+						for fullURL[len(fullURL)-1] != '/' {
+							fullURL = fullURL[:len(fullURL)-1]
+						}
+						fullURL = strings.TrimSuffix(fullURL, "/") // remove trailing slash
+						path := strings.TrimPrefix(a.Val, "/")
+						fullURL += "/" + path
+
+						result.subpages[normalizeURL(fullURL)] = struct{}{}
+					}
 				}
 				break
 			}
@@ -147,6 +179,7 @@ func normalizeURL(raw string) string {
 	if err != nil {
 		return raw
 	}
+
 	if u.Scheme == "http" || u.Scheme == "" {
 		u.Scheme = "https"
 	}
