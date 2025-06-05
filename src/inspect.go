@@ -117,61 +117,62 @@ func findSubpages(orig string) PageResult {
 
 		for _, a := range t.Attr {
 			if a.Key == "href" {
-				if  // Ignore mail, phone, and javascript protocols
-					strings.HasPrefix(a.Val, "mailto:") ||
-					strings.HasPrefix(a.Val, "sms:") ||
-					strings.HasPrefix(a.Val, "tel:") || 
-					strings.HasPrefix(a.Val, "javascript:") {
-					break
-				} else if strings.HasPrefix(a.Val, "http") {	// Absolute URL
-					result.subpages[normalizeURL(a.Val)] = struct{}{}
-				} else { // Relative URL					
-					if strings.HasPrefix(a.Val, "/") {	// Root directory relative
-						parsedURL, err := url.Parse(pageurl)
-						if err != nil {
-							fmt.Printf("Error parsing %s: %v\n", pageurl, err)
-							return PageResult{}
-						}
-						fullURL := "https://" + parsedURL.Hostname() + a.Val
-
-						result.subpages[normalizeURL(fullURL)] = struct{}{}
-					} else if strings.HasPrefix(a.Val, "../") { // Parent relative
-						fullURL := strings.TrimSuffix(pageurl, "/")
-
-						path := a.Val
-						for strings.HasPrefix(path, "../") {
-							// scope out from current directory
-							for fullURL[len(fullURL)-1] != '/' {
-								fullURL = fullURL[:len(fullURL)-1]
-							}
-							fullURL = strings.TrimSuffix(fullURL, "/") // remove trailing slash
-							path = strings.TrimPrefix(path, "../")	// remove ../ in path
-						}
-						fullURL += path
-
-						result.subpages[normalizeURL(fullURL)] = struct{}{}
-
-					} else if strings.HasPrefix(a.Val, "#") { // && a.Val != "#" {
-						// check that the corresponding element exists in the html body?
-						break
-					} else { // Current directory relative
-						fullURL := strings.TrimSuffix(pageurl, "/")							
-						for fullURL[len(fullURL)-1] != '/' {
-							fullURL = fullURL[:len(fullURL)-1]
-						}
-						fullURL = strings.TrimSuffix(fullURL, "/") // remove trailing slash
-						path := strings.TrimPrefix(a.Val, "/")
-						fullURL += "/" + path
-
-						result.subpages[normalizeURL(fullURL)] = struct{}{}
-					}
-				}
+				handleHref(pageurl, a.Val, result.subpages)
 				break
 			}
 		}
 	}
 
 	return result
+}
+
+func handleHref(pageurl, val string, history map[string]struct{}) {
+	if  strings.HasPrefix(val, "mailto:") ||	// Ignore mail, phone, and javascript protocols
+		strings.HasPrefix(val, "sms:") ||
+		strings.HasPrefix(val, "tel:") || 
+		strings.HasPrefix(val, "javascript:") {
+		return
+		
+	} else if strings.HasPrefix(val, "http") {	// Absolute URL
+		history[normalizeURL(val)] = struct{}{}
+
+	} else if strings.HasPrefix(val, "/") {		// Root directory relative
+		parsedURL, err := url.Parse(pageurl)
+		if err != nil {
+			fmt.Printf("Error parsing %s: %v\n", pageurl, err)
+			return
+		}
+		fullURL := "https://" + parsedURL.Hostname() + val
+		history[normalizeURL(fullURL)] = struct{}{}
+		
+	} else if strings.HasPrefix(val, "../") {	// Parent relative
+		fullURL := strings.TrimSuffix(pageurl, "/")
+
+		path := val
+		for strings.HasPrefix(path, "../") {
+			// scope out from current directory
+			if idx := strings.LastIndex(fullURL, "/"); idx != -1 {
+				fullURL = fullURL[:idx-1]
+			}
+			path = strings.TrimPrefix(path, "../")	// remove ../ in path
+		}
+		fullURL += path
+
+		history[normalizeURL(fullURL)] = struct{}{}
+
+	} else if strings.HasPrefix(val, "#") { // && a.Val != "#" {
+		// check that the corresponding element exists in the html body?
+		return
+	} else { // Current directory relative
+		fullURL := strings.TrimSuffix(pageurl, "/")				
+		if idx := strings.LastIndex(fullURL, "/"); idx != -1 {
+			fullURL = fullURL[:idx-1]
+		}
+		path := strings.TrimPrefix(val, "/")
+		fullURL += "/" + path
+
+		history[normalizeURL(fullURL)] = struct{}{}
+	}
 }
 
 func normalizeURL(raw string) string {
@@ -184,7 +185,8 @@ func normalizeURL(raw string) string {
 		u.Scheme = "https"
 	}
 
-	// Remove 'www.' prefix if present
+	// Remove 'www.' prefix if present 
+	// TODO--some website needs www for requests else returns 403
 	u.Host = strings.TrimPrefix(u.Host, "www.")
 	u.Path = strings.TrimRight(u.Path, "/")
 	u.Fragment = ""
